@@ -24,13 +24,11 @@
 #include "utils.h"
 #include "config.h"
 #include "localize.h"
-#include "thread.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#ifndef CANTATA_WEB
 #include <QProcess>
-#include <QSet>
-#include <QThread>
 #include <QApplication>
 #include <QDateTime>
 #include <QTime>
@@ -55,48 +53,13 @@
 #endif
 #include <sys/types.h>
 #include <utime.h>
+#endif
 
 const QLatin1Char Utils::constDirSep('/');
 const QLatin1String Utils::constDirSepStr("/");
 const char * Utils::constDirSepCharStr="/";
 
 static const QLatin1String constHttp("http://");
-
-QString Utils::strippedText(QString s)
-{
-    s.remove(QString::fromLatin1("..."));
-    int i = 0;
-    while (i < s.size()) {
-        ++i;
-        if (s.at(i - 1) != QLatin1Char('&')) {
-            continue;
-        }
-
-        if (i < s.size() && s.at(i) == QLatin1Char('&')) {
-            ++i;
-        }
-        s.remove(i - 1, 1);
-    }
-    return s.trimmed();
-}
-
-QString Utils::stripAcceleratorMarkers(QString label)
-{
-    int p = 0;
-    forever {
-        p = label.indexOf('&', p);
-        if(p < 0 || p + 1 >= label.length()) {
-            break;
-        }
-
-        if(label.at(p + 1).isLetterOrNumber() || label.at(p + 1) == '&') {
-            label.remove(p, 1);
-        }
-
-        ++p;
-    }
-    return label;
-}
 
 QString Utils::fixPath(const QString &dir, bool ensureEndsInSlash)
 {
@@ -148,35 +111,6 @@ QString Utils::tildaToHome(const QString &s)
 }
 #endif
 
-QString Utils::convertPathForDisplay(const QString &path, bool isFolder)
-{
-    if (path.isEmpty() || path.startsWith(constHttp)) {
-        return path;
-    }
-
-    QString p(path);
-    if (p.endsWith(constDirSep)) {
-        p=p.left(p.length()-1);
-    }
-    /* TODO: Display ~/Music or /home/user/Music / /Users/user/Music ???
-    p=homeToTilda(QDir::toNativeSeparators(p));
-    */
-    return QDir::toNativeSeparators(isFolder && p.endsWith(constDirSep) ? p.left(p.length()-1) : p);
-}
-
-QString Utils::convertPathFromDisplay(const QString &path, bool isFolder)
-{
-    QString p=path.trimmed();
-    if (p.isEmpty()) {
-        return p;
-    }
-
-    if (p.startsWith(constHttp)) {
-        return fixPath(p);
-    }
-    return tildaToHome(fixPath(QDir::fromNativeSeparators(p), isFolder));
-}
-
 QString Utils::getDir(const QString &file)
 {
     bool isCueFile=file.contains("/cue:///") && file.contains("?pos=");
@@ -221,6 +155,91 @@ QString Utils::changeExtension(const QString &file, const QString &extension)
         return f+(extension.startsWith('.') ? extension.mid(1) : extension);
     }
     return f+(extension.startsWith('.') ? extension : (QChar('.')+extension));
+}
+
+bool Utils::isDirReadable(const QString &dir)
+{
+    #ifdef Q_OS_WIN
+    if (dir.isEmpty()) {
+        return false;
+    } else {
+        QDir d(dir);
+        bool dirReadable=d.isReadable();
+        // Handle cases where dir is set to \\server\ (i.e. no shared folder is set in path)
+        if (!dirReadable && dir.startsWith(QLatin1String("//")) && d.isRoot() && (dir.length()-1)==dir.indexOf(Utils::constDirSep, 2)) {
+            dirReadable=true;
+        }
+        return dirReadable;
+    }
+    #else
+    return dir.isEmpty() ? false : QDir(dir).isReadable();
+    #endif
+}
+
+#ifndef CANTATA_WEB
+QString Utils::strippedText(QString s)
+{
+    s.remove(QString::fromLatin1("..."));
+    int i = 0;
+    while (i < s.size()) {
+        ++i;
+        if (s.at(i - 1) != QLatin1Char('&')) {
+            continue;
+        }
+
+        if (i < s.size() && s.at(i) == QLatin1Char('&')) {
+            ++i;
+        }
+        s.remove(i - 1, 1);
+    }
+    return s.trimmed();
+}
+
+QString Utils::stripAcceleratorMarkers(QString label)
+{
+    int p = 0;
+    forever {
+        p = label.indexOf('&', p);
+        if(p < 0 || p + 1 >= label.length()) {
+            break;
+        }
+
+        if(label.at(p + 1).isLetterOrNumber() || label.at(p + 1) == '&') {
+            label.remove(p, 1);
+        }
+
+        ++p;
+    }
+    return label;
+}
+
+QString Utils::convertPathForDisplay(const QString &path, bool isFolder)
+{
+    if (path.isEmpty() || path.startsWith(constHttp)) {
+        return path;
+    }
+
+    QString p(path);
+    if (p.endsWith(constDirSep)) {
+        p=p.left(p.length()-1);
+    }
+    /* TODO: Display ~/Music or /home/user/Music / /Users/user/Music ???
+    p=homeToTilda(QDir::toNativeSeparators(p));
+    */
+    return QDir::toNativeSeparators(isFolder && p.endsWith(constDirSep) ? p.left(p.length()-1) : p);
+}
+
+QString Utils::convertPathFromDisplay(const QString &path, bool isFolder)
+{
+    QString p=path.trimmed();
+    if (p.isEmpty()) {
+        return p;
+    }
+
+    if (p.startsWith(constHttp)) {
+        return fixPath(p);
+    }
+    return tildaToHome(fixPath(QDir::fromNativeSeparators(p), isFolder));
 }
 
 #ifndef Q_OS_WIN
@@ -322,11 +341,6 @@ bool Utils::createWorldReadableDir(const QString &dir, const QString &base, cons
     ::umask(oldMask);
     return status;
     #endif
-}
-
-void Utils::msleep(int msecs)
-{
-    Thread::msleep(msecs);
 }
 
 #ifndef ENABLE_KDE_SUPPORT
@@ -831,25 +845,6 @@ void Utils::touchFile(const QString &fileName)
     ::utime(QFile::encodeName(fileName).constData(), 0);
 }
 
-bool Utils::isDirReadable(const QString &dir)
-{
-    #ifdef Q_OS_WIN
-    if (dir.isEmpty()) {
-        return false;
-    } else {
-        QDir d(dir);
-        bool dirReadable=d.isReadable();
-        // Handle cases where dir is set to \\server\ (i.e. no shared folder is set in path)
-        if (!dirReadable && dir.startsWith(QLatin1String("//")) && d.isRoot() && (dir.length()-1)==dir.indexOf(Utils::constDirSep, 2)) {
-            dirReadable=true;
-        }
-        return dirReadable;
-    }
-    #else
-    return dir.isEmpty() ? false : QDir(dir).isReadable();
-    #endif
-}
-
 double Utils::smallFontFactor(const QFont &f)
 {
     double sz=f.pointSizeF();
@@ -1037,3 +1032,5 @@ void Utils::raiseWindow(QWidget *w)
     #endif
     #endif
 }
+
+#endif // CANTATA_WEB

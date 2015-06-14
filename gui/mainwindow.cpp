@@ -43,11 +43,10 @@
 #include "settings.h"
 #include "support/utils.h"
 #include "support/touchproxystyle.h"
-#include "models/musiclibrarymodel.h"
 #include "models/musiclibraryitemartist.h"
 #include "models/musiclibraryitemalbum.h"
+#include "models/mpdlibrarymodel.h"
 #include "librarypage.h"
-#include "albumspage.h"
 #include "folderpage.h"
 #ifdef ENABLE_STREAMS
 #include "streams/streamspage.h"
@@ -60,7 +59,6 @@
 #include "devices/devicespage.h"
 #include "models/devicesmodel.h"
 #include "devices/actiondialog.h"
-#include "devices/syncdialog.h"
 #if defined CDDB_FOUND || defined MUSICBRAINZ5_FOUND
 #include "devices/audiocddevice.h"
 #endif
@@ -195,7 +193,6 @@ MainWindow::MainWindow(QWidget *parent)
     messageWidget->hide();
 
     // Need to set these values here, as used in library/device loading...
-    MPDParseUtils::setGroupSingle(Settings::self()->groupSingle());
     Song::setComposerGenres(Settings::self()->composerGenres());
 
     int hSpace=Utils::layoutSpacing(this);
@@ -327,12 +324,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(cancelAction, SIGNAL(triggered()), messageWidget, SLOT(animatedHide()));
     connect(clearPlayQueueAction, SIGNAL(triggered()), messageWidget, SLOT(animatedHide()));
     connect(clearPlayQueueAction, SIGNAL(triggered()), this, SLOT(clearPlayQueue()));
-    clearNewStateAction = ActionCollection::get()->createAction("clearnewstate", i18n("Clear 'New' State Of Artists and Albums"));
-    connect(clearNewStateAction, SIGNAL(triggered()), MusicLibraryModel::self(), SLOT(clearNewState()));
-    connect(clearNewStateAction, SIGNAL(triggered()), AlbumsModel::self(), SLOT(clearNewState()));
-    connect(MusicLibraryModel::self(), SIGNAL(haveNewItems(bool)), clearNewStateAction, SLOT(setEnabled(bool)));
-    connect(MusicLibraryModel::self(), SIGNAL(error(QString)), this, SLOT(showError(QString)));
-    clearNewStateAction->setEnabled(false);
 
     StdActions::self()->playPauseTrackAction->setEnabled(false);
     StdActions::self()->nextTrackAction->setEnabled(false);
@@ -388,16 +379,10 @@ MainWindow::MainWindow(QWidget *parent)
     tabWidget->addTab(playQueuePage, TAB_ACTION(showPlayQueueAction), playQueueInSidebar);
     connect(showPlayQueueAction, SIGNAL(triggered()), this, SLOT(showPlayQueue()));
     libraryPage = new LibraryPage(this);
-    addAction(libraryTabAction = ActionCollection::get()->createAction("showlibrarytab", i18n("Artists"), Icons::self()->artistsIcon));
+    addAction(libraryTabAction = ActionCollection::get()->createAction("showlibrarytab", i18n("Library"), Icons::self()->libraryIcon));
     libraryTabAction->setShortcut(Qt::ControlModifier+Qt::ShiftModifier+nextKey(sidebarPageShortcutKey));
     tabWidget->addTab(libraryPage, TAB_ACTION(libraryTabAction), !hiddenPages.contains(libraryPage->metaObject()->className()));
     connect(libraryTabAction, SIGNAL(triggered()), this, SLOT(showLibraryTab()));
-    albumsPage = new AlbumsPage(this);
-    addAction(albumsTabAction = ActionCollection::get()->createAction("showalbumstab", i18n("Albums"), Icons::self()->albumsIcon));
-    albumsTabAction->setShortcut(Qt::ControlModifier+Qt::ShiftModifier+nextKey(sidebarPageShortcutKey));
-    tabWidget->addTab(albumsPage, TAB_ACTION(albumsTabAction), !hiddenPages.contains(albumsPage->metaObject()->className()));
-    connect(albumsTabAction, SIGNAL(triggered()), this, SLOT(showAlbumsTab()));
-    AlbumsModel::self()->setEnabled(!hiddenPages.contains(albumsPage->metaObject()->className()));
     folderPage = new FolderPage(this);
     addAction(foldersTabAction = ActionCollection::get()->createAction("showfolderstab", i18n("Folders"), Icons::self()->foldersIcon));
     foldersTabAction->setShortcut(Qt::ControlModifier+Qt::ShiftModifier+nextKey(sidebarPageShortcutKey));
@@ -562,7 +547,6 @@ MainWindow::MainWindow(QWidget *parent)
         clearPlayQueueButton->setIcon(Icons::self()->clearListIcon);
     }
     #endif
-    MusicLibraryItemAlbum::setSortByDate(Settings::self()->libraryYear());
     expandedSize=Settings::self()->mainWindowSize();
     collapsedSize=Settings::self()->mainWindowCollapsedSize();
 
@@ -643,7 +627,6 @@ MainWindow::MainWindow(QWidget *parent)
         #else
         mainMenu->addAction(prefAction);
         mainMenu->addAction(refreshDbAction);
-        mainMenu->addAction(clearNewStateAction);
         mainMenu->addSeparator();
         mainMenu->addAction(StdActions::self()->searchAction);
         mainMenu->addAction(searchPlayQueueAction);
@@ -675,8 +658,6 @@ MainWindow::MainWindow(QWidget *parent)
         menu=new QMenu(i18n("&Edit"), this);
         addMenuAction(menu, playQueueModel.undoAct());
         addMenuAction(menu, playQueueModel.redoAct());
-        menu->addSeparator();
-        addMenuAction(menu, clearNewStateAction);
         menu->addSeparator();
         addMenuAction(menu, StdActions::self()->searchAction);
         addMenuAction(menu, searchPlayQueueAction);
@@ -804,7 +785,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(DevicesModel::self(), SIGNAL(addToDevice(const QString &)), this, SLOT(addToDevice(const QString &)));
     connect(DevicesModel::self(), SIGNAL(error(const QString &)), this, SLOT(showError(const QString &)));
     connect(libraryPage, SIGNAL(addToDevice(const QString &, const QString &, const QList<Song> &)), SLOT(copyToDevice(const QString &, const QString &, const QList<Song> &)));
-    connect(albumsPage, SIGNAL(addToDevice(const QString &, const QString &, const QList<Song> &)), SLOT(copyToDevice(const QString &, const QString &, const QList<Song> &)));
     connect(folderPage, SIGNAL(addToDevice(const QString &, const QString &, const QList<Song> &)), SLOT(copyToDevice(const QString &, const QString &, const QList<Song> &)));
     connect(playlistsPage, SIGNAL(addToDevice(const QString &, const QString &, const QList<Song> &)), SLOT(copyToDevice(const QString &, const QString &, const QList<Song> &)));
     connect(devicesPage, SIGNAL(addToDevice(const QString &, const QString &, const QList<Song> &)), SLOT(copyToDevice(const QString &, const QString &, const QList<Song> &)));
@@ -812,7 +792,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(StdActions::self()->deleteSongsAction, SIGNAL(triggered()), SLOT(deleteSongs()));
     connect(devicesPage, SIGNAL(deleteSongs(const QString &, const QList<Song> &)), SLOT(deleteSongs(const QString &, const QList<Song> &)));
     connect(libraryPage, SIGNAL(deleteSongs(const QString &, const QList<Song> &)), SLOT(deleteSongs(const QString &, const QList<Song> &)));
-    connect(albumsPage, SIGNAL(deleteSongs(const QString &, const QList<Song> &)), SLOT(deleteSongs(const QString &, const QList<Song> &)));
     connect(folderPage, SIGNAL(deleteSongs(const QString &, const QList<Song> &)), SLOT(deleteSongs(const QString &, const QList<Song> &)));
     #endif
     connect(StdActions::self()->addPrioHighestAction, SIGNAL(triggered()), this, SLOT(addWithPriority()));
@@ -842,7 +821,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&playQueueModel, SIGNAL(streamFetchStatus(QString)), playQueue, SLOT(streamFetchStatus(QString)));
     connect(playQueue, SIGNAL(cancelStreamFetch()), &playQueueModel, SLOT(cancelStreamFetch()));
     connect(playQueue, SIGNAL(itemsSelected(bool)), SLOT(playQueueItemsSelected(bool)));
-    connect(MPDStats::self(), SIGNAL(updated()), this, SLOT(updateStats()));
     connect(MPDStatus::self(), SIGNAL(updated()), this, SLOT(updateStatus()));
     connect(MPDConnection::self(), SIGNAL(playlistUpdated(const QList<Song> &, bool)), this, SLOT(updatePlayQueue(const QList<Song> &, bool)));
     connect(MPDConnection::self(), SIGNAL(currentSongUpdated(Song)), this, SLOT(updateCurrentSong(Song)));
@@ -952,7 +930,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     if (Settings::self()->firstRun() && MPDConnection::self()->isConnected()) {
         mpdConnectionStateChanged(true);
-        updateStats();
     }
     #ifndef ENABLE_KDE_SUPPORT
     MediaKeys::self()->start();
@@ -1082,7 +1059,6 @@ void MainWindow::mpdConnectionStateChanged(bool connected)
         updateWindowTitle();
     } else {
         libraryPage->clear();
-        albumsPage->clear();
         folderPage->clear();
         playlistsPage->clear();
         playQueueModel.clear();
@@ -1153,7 +1129,6 @@ void MainWindow::connectToMpd(const MPDConnectionDetails &details)
 {
     if (!MPDConnection::self()->isConnected() || details!=MPDConnection::self()->getDetails()) {
         libraryPage->clear();
-        albumsPage->clear();
         folderPage->clear();
         playlistsPage->clear();
         playQueueModel.clear();
@@ -1203,8 +1178,7 @@ void MainWindow::refreshDbPromp()
 
 void MainWindow::fullDbRefresh()
 {
-    MusicLibraryModel::self()->removeCache();
-    DirViewModel::self()->removeCache();
+    MpdLibraryModel::self()->clearDb();
 }
 
 #ifdef ENABLE_KDE_SUPPORT
@@ -1262,7 +1236,7 @@ bool MainWindow::canShowDialog()
         || TagEditor::instanceCount() || TrackOrganiser::instanceCount()
         #endif
         #ifdef ENABLE_DEVICES_SUPPORT
-         || ActionDialog::instanceCount() || SyncDialog::instanceCount()
+         || ActionDialog::instanceCount()
         #endif
         #ifdef ENABLE_REPLAYGAIN_SUPPORT
          || RgDialog::instanceCount()
@@ -1309,7 +1283,7 @@ void MainWindow::quit()
     }
     #endif
     #ifdef ENABLE_DEVICES_SUPPORT
-    if (ActionDialog::instanceCount() || 0!=SyncDialog::instanceCount()) {
+    if (ActionDialog::instanceCount()) {
         return;
     }
     #endif
@@ -1482,17 +1456,13 @@ void MainWindow::readSettings()
     CurrentCover::self()->setEnabled(Settings::self()->showPopups() || 0!=Settings::self()->playQueueBackground() || Settings::self()->showCoverWidget());
     #endif
     checkMpdDir();
+    MpdLibraryModel::self()->readSettings();
     Covers::self()->readConfig();
     HttpServer::self()->readConfig();
     #ifdef ENABLE_DEVICES_SUPPORT
     StdActions::self()->deleteSongsAction->setVisible(Settings::self()->showDeleteAction());
     #endif
-    MPDParseUtils::setGroupSingle(Settings::self()->groupSingle());
     Song::setComposerGenres(Settings::self()->composerGenres());
-    albumsPage->setView(Settings::self()->albumsView());
-    AlbumsModel::self()->setAlbumSort(Settings::self()->albumSort());
-    MusicLibraryItemAlbum::setSortByDate(Settings::self()->libraryYear());
-    MusicLibraryModel::self()->readConfig();
     libraryPage->setView(Settings::self()->libraryView());
     playlistsPage->setView(Settings::self()->playlistsView());
     #ifdef ENABLE_STREAMS
@@ -1544,35 +1514,7 @@ void MainWindow::updateSettings()
 {
     connectToMpd();
     Settings::self()->save();
-    bool diffAlbumSort=AlbumsModel::self()->albumSort()!=Settings::self()->albumSort();
-    bool diffLibYear=MusicLibraryItemAlbum::sortByDate()!=Settings::self()->libraryYear();
-    bool diffGrouping=MPDParseUtils::groupSingle()!=Settings::self()->groupSingle() ||
-                      Song::composerGenres()!=Settings::self()->composerGenres();
-
     readSettings();
-
-    if (diffGrouping) {
-        MusicLibraryModel::self()->toggleGrouping();
-        #ifdef ENABLE_DEVICES_SUPPORT
-        DevicesModel::self()->toggleGrouping();
-        #endif
-        #ifdef ENABLE_ONLINE_SERVICES
-        OnlineServicesModel::self()->toggleGrouping();
-        #endif
-    }
-
-    if (diffAlbumSort) {
-        albumsPage->resort();
-    }
-    if (diffLibYear) {
-        libraryPage->resort();
-        #ifdef ENABLE_ONLINE_SERVICES
-        onlinePage->resort();
-        #endif
-        #ifdef ENABLE_DEVICES_SUPPORT
-        devicesPage->resort();
-        #endif
-    }
 
     bool wasAutoExpand=playQueue->isAutoExpand();
     bool wasStartClosed=playQueue->isStartClosed();
@@ -1617,6 +1559,8 @@ void MainWindow::showServerInfo()
     qSort(handlers);
     qSort(tags);
     long version=MPDConnection::self()->version();
+    QDateTime dbUpdate;
+    dbUpdate.setTime_t(MPDStats::self()->dbUpdate());
     MessageBox::information(this, 
                                   #ifdef Q_OS_MAC
                                   i18n("Server Information")+QLatin1String("<br/><br/>")+
@@ -1640,7 +1584,7 @@ void MainWindow::showServerInfo()
                                        "<tr><td align=\"right\">Duration:&nbsp;</td><td>%4</td></tr>"
                                        "<tr><td align=\"right\">Updated:&nbsp;</td><td>%5</td></tr>",
                                        MPDStats::self()->artists(), MPDStats::self()->albums(), MPDStats::self()->songs(),
-                                       Utils::formatDuration(MPDStats::self()->dbPlaytime()), MPDStats::self()->dbUpdate().toString(Qt::SystemLocaleShortDate))+
+                                       Utils::formatDuration(MPDStats::self()->dbPlaytime()), dbUpdate.toString(Qt::SystemLocaleShortDate))+
                                   QLatin1String("</table></p>"),
                             i18n("Server Information"));
 }
@@ -1835,22 +1779,6 @@ void MainWindow::scrollPlayQueue(bool wasEmpty)
         if (row>=0) {
             playQueue->scrollTo(playQueueProxyModel.mapFromSource(playQueueModel.index(row, 0)), QAbstractItemView::PositionAtCenter);
         }
-    }
-}
-
-void MainWindow::updateStats()
-{
-    // Check if remote db is more recent than local one
-    if (!MusicLibraryModel::self()->lastUpdate().isValid() || MPDStats::self()->dbUpdate() > MusicLibraryModel::self()->lastUpdate()) {
-        if (!MusicLibraryModel::self()->lastUpdate().isValid()) {
-            libraryPage->clear();
-            //albumsPage->clear();
-            folderPage->clear();
-            playlistsPage->clear();
-        }
-        albumsPage->goTop();
-        libraryPage->refresh();
-        folderPage->refresh();
     }
 }
 
@@ -2066,7 +1994,7 @@ void MainWindow::addToNewStoredPlaylist()
     for(;;) {
         QString name = InputDialog::getText(i18n("Playlist Name"), i18n("Enter a name for the playlist:"), QString(), 0, this);
 
-        if (name==StreamsModel::constPlayListName) {
+        if (name==MPDConnection::constStreamsPlayListName) {
             MessageBox::error(this, i18n("'%1' is used to store favorite streams, please choose another name.", name));
             continue;
         }
@@ -2203,7 +2131,6 @@ void MainWindow::currentTabChanged(int index)
     controlDynamicButton();
     switch(index) {
     case PAGE_LIBRARY:   currentPage=libraryPage;   break;
-    case PAGE_ALBUMS:    currentPage=albumsPage;    break;
     case PAGE_FOLDERS:   folderPage->load();  currentPage=folderPage; break;
     case PAGE_PLAYLISTS: currentPage=playlistsPage; break;
     #ifdef ENABLE_DYNAMIC
@@ -2260,9 +2187,6 @@ void MainWindow::tabToggled(int index)
     case PAGE_LIBRARY:
         locateTrackAction->setVisible(tabWidget->isEnabled(index));
         break;
-    case PAGE_ALBUMS:
-        AlbumsModel::self()->setEnabled(!AlbumsModel::self()->isEnabled());
-        break;
     case PAGE_FOLDERS:
         folderPage->setEnabled(!folderPage->isEnabled());
         break;
@@ -2305,10 +2229,8 @@ void MainWindow::toggleMonoIcons()
         Icons::self()->initSidebarIcons();
         showPlayQueueAction->setIcon(Icons::self()->playqueueIcon);
         tabWidget->setIcon(PAGE_PLAYQUEUE, showPlayQueueAction->icon());
-        libraryTabAction->setIcon(Icons::self()->artistsIcon);
+        libraryTabAction->setIcon(Icons::self()->libraryIcon);
         tabWidget->setIcon(PAGE_LIBRARY, libraryTabAction->icon());
-        albumsTabAction->setIcon(Icons::self()->albumsIcon);
-        tabWidget->setIcon(PAGE_ALBUMS, albumsTabAction->icon());
         foldersTabAction->setIcon(Icons::self()->foldersIcon);
         tabWidget->setIcon(PAGE_FOLDERS, foldersTabAction->icon());
         playlistsTabAction->setIcon(Icons::self()->playlistsIcon);
@@ -2451,7 +2373,7 @@ void MainWindow::editTags()
         }
     }
     #endif
-    MusicLibraryModel::self()->getDetails(artists, albumArtists, composers, albums, genres);
+    MpdLibraryModel::self()->getDetails(artists, albumArtists, composers, albums, genres);
     TagEditor *dlg=new TagEditor(this, songs, artists, albumArtists, composers, albums, genres, udi);
     dlg->show();
     #endif
@@ -2612,7 +2534,6 @@ void MainWindow::updateActionToolTips()
     ActionCollection::get()->updateToolTips();
     tabWidget->setToolTip(PAGE_PLAYQUEUE, showPlayQueueAction->toolTip());
     tabWidget->setToolTip(PAGE_LIBRARY, libraryTabAction->toolTip());
-    tabWidget->setToolTip(PAGE_ALBUMS, albumsTabAction->toolTip());
     tabWidget->setToolTip(PAGE_FOLDERS, foldersTabAction->toolTip());
     tabWidget->setToolTip(PAGE_PLAYLISTS, playlistsTabAction->toolTip());
     #ifdef ENABLE_DYNAMIC

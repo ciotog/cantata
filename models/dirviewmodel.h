@@ -28,7 +28,6 @@
 
 #include <QList>
 #include <QModelIndex>
-#include <QDateTime>
 #include "dirviewitemroot.h"
 #include "actionmodel.h"
 
@@ -39,8 +38,6 @@ class DirViewModel : public ActionModel
     Q_OBJECT
 
 public:
-    static const QLatin1String constCacheName;
-
     static DirViewModel * self();
 
     DirViewModel(QObject *parent = 0);
@@ -56,32 +53,31 @@ public:
     #ifndef ENABLE_UBUNTU
     QMimeData *mimeData(const QModelIndexList &indexes) const;
     #endif
+    void load();
     void clear();
     void addFileToList(const QString &file, const QString &mopidyPath);
     void removeFileFromList(const QString &file);
     bool isEnabled() const { return enabled; }
     void setEnabled(bool e);
-    void removeCache();
-    void toXML();
-    bool fromXML();
 
 public Q_SLOTS:
-    void updateDirView(DirViewItemRoot *newroot, const QDateTime &dbUpdate=QDateTime(), bool fromFile=false);
-    void updatingMpd();
+    void updateDirView(DirViewItemRoot *newroot, time_t dbUpdate=0);
+    void mpdStatsUpdated();
 
 Q_SIGNALS:
     void updated();
+    void loadFolers();
 
 private:
     void toXML(const DirViewItem *item, QXmlStreamWriter &writer);
-    quint32 fromXML(QIODevice *dev, const QDateTime &dt, DirViewItemRoot *root);
+    time_t fromXML(QIODevice *dev, time_t dt, DirViewItemRoot *root);
     void addFileToList(const QStringList &parts, const QModelIndex &parent, DirViewItemDir *dir, const QString &mopidyPath);
     void removeFileFromList(const QStringList &parts, const QModelIndex &parent, DirViewItemDir *dir);
     void getFiles(DirViewItem *item, QStringList &filenames, bool allowPlaylists) const;
 
 private:
     DirViewItemRoot *rootItem;
-    QDateTime databaseTime;
+    time_t databaseTime;
     bool databaseTimeUnreliable;
     bool enabled;
 };

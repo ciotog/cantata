@@ -26,23 +26,25 @@
 
 #include "mpdconnection.h"
 #include "mpdparseutils.h"
-#include "models/musiclibraryitemroot.h"
+#ifndef CANTATA_WEB
 #include "models/streamsmodel.h"
+#endif
 #ifdef ENABLE_SIMPLE_MPD_SUPPORT
 #include "mpduser.h"
 #include "gui/settings.h"
 #endif
 #include "support/localize.h"
-#include "support/utils.h"
 #include "support/globalstatic.h"
+#if !defined ENABLE_UBUNTU && !defined CANTATA_WEB
 #include "support/configuration.h"
-#include <QApplication>
+#endif
 #include <QStringList>
 #include <QTimer>
 #include <QDir>
 #include <QHostInfo>
 #include <QDateTime>
 #include <QPropertyAnimation>
+#include <QCoreApplication>
 #include "support/thread.h"
 #include "cuefile.h"
 #if defined Q_OS_LINUX && defined QT_QTDBUS_FOUND
@@ -64,7 +66,7 @@ void MPDConnection::enableDebug()
 static const int constSocketCommsTimeout=2000;
 static const int constMaxReadAttempts=4;
 static int maxFilesPerAddCommand=10000;
-static bool alwaysUseLsInfo=false;
+static bool alwaysUseLsInfo=true;
 static int seekStep=5;
 
 static const QByteArray constOkValue("OK");
@@ -107,7 +109,8 @@ static QByteArray log(const QByteArray &data)
 GLOBAL_STATIC(MPDConnection, instance)
 
 QString MPDConnection::constModifiedSince=QLatin1String("modified-since");
-const int MPDConnection::constMaxPqChaanges=1000;
+const int MPDConnection::constMaxPqChanges=1000;
+const QString MPDConnection::constStreamsPlayListName=QLatin1String("[Radio Streams]");
 
 QByteArray MPDConnection::quote(int val)
 {
@@ -243,6 +246,7 @@ MPDConnection::MPDConnection()
     , fadeDuration(0)
     , restoreVolume(-1)
 {
+    qRegisterMetaType<time_t>("time_t");
     qRegisterMetaType<Song>("Song");
     qRegisterMetaType<Output>("Output");
     qRegisterMetaType<Playlist>("Playlist");
@@ -263,11 +267,12 @@ MPDConnection::MPDConnection()
     #if (defined Q_OS_LINUX && defined QT_QTDBUS_FOUND) || (defined Q_OS_MAC && defined IOKIT_FOUND)
     connect(PowerManagement::self(), SIGNAL(resuming()), this, SLOT(reconnect()));
     #endif
-    #ifndef ENABLE_UBUNTU
+    #if !defined ENABLE_UBUNTU && !defined CANTATA_WEB
     Configuration cfg;
     maxFilesPerAddCommand=cfg.get("mpdListSize", 10000, 100, 65535);
     alwaysUseLsInfo=cfg.get("alwaysUseLsInfo", true);
     seekStep=cfg.get("seekStep", 5, 2, 60);
+    MPDParseUtils::setSingleTracksFolder(cfg.get("singleTracksFolder", QString()));
     #endif
     connTimer=new QTimer(this);
     connect(connTimer, SIGNAL(timeout()), SLOT(getStatus()));
@@ -534,6 +539,7 @@ void MPDConnection::setDetails(const MPDConnectionDetails &d)
 
     details=det;
     if (diffDetails || State_Connected!=state) {
+        emit connectionChanged(details);
         DBUG << "setDetails" << details.hostname << details.port << (details.password.isEmpty() ? false : true);
         if (State_Connected==state && fadingVolume()) {
             sendCommand("stop");
@@ -564,7 +570,12 @@ void MPDConnection::setDetails(const MPDConnectionDetails &d)
             emit stateChanged(true);
             break;
         default:
+            #ifdef CANTATA_WEB
+            qWarning() << "Could not connect to MPD" << details.hostname << details.port;
+            ::exit(-1);
+            #else
             emit error(errorString(status), true);
+            #endif
         }
     } else if (diffName) {
          emit stateChanged(true);
@@ -907,7 +918,7 @@ void MPDConnection::setOrder(const QList<quint32> &items)
         // If there are more than X changes made to the playqueue, then doing partial updates
         // can hang the UI. Therefore, set lastUpdatePlayQueueVersion to 0 to cause playlistInfo
         // to be used to do a complete update.
-        if (sendCommand(send).ok && numChanges>constMaxPqChaanges) {
+        if (sendCommand(send).ok && numChanges>constMaxPqChanges) {
             lastUpdatePlayQueueVersion=0;
         }
     }
@@ -958,7 +969,7 @@ void MPDConnection::playListChanges()
         emitStatusUpdated(sv);
         QList<MPDParseUtils::IdPos> changes=MPDParseUtils::parseChanges(response.data);
         if (!changes.isEmpty()) {
-            if (changes.count()>constMaxPqChaanges) {
+            if (changes.count()>constMaxPqChanges) {
                 playListInfo();
                 return;
             }
@@ -1059,9 +1070,10 @@ void MPDConnection::playListChanges()
 void MPDConnection::playListInfo()
 {
     Response response=sendCommand("playlistinfo");
+    QList<Song> songs;
     if (response.ok) {
         lastUpdatePlayQueueVersion=lastStatusPlayQueueVersion;
-        QList<Song> songs=MPDParseUtils::parseSongs(response.data, MPDParseUtils::Loc_PlayQueue);
+        songs=MPDParseUtils::parseSongs(response.data, MPDParseUtils::Loc_PlayQueue);
         playQueueIds.clear();
         streamIds.clear();
 
@@ -1079,7 +1091,6 @@ void MPDConnection::playListInfo()
             }
         }
         emit cantataStreams(cStreams, false);
-        emit playlistUpdated(songs, true);
         if (songs.isEmpty()) {
             stopVolumeFade();
         }
@@ -1090,6 +1101,7 @@ void MPDConnection::playListInfo()
             emitStatusUpdated(sv);
         }
     }
+    emit playlistUpdated(songs, true);
 }
 
 /*
@@ -1287,7 +1299,7 @@ void MPDConnection::getStats()
         MPDStatsValues stats=MPDParseUtils::parseStats(response.data);
         dbUpdate=stats.dbUpdate;
         mopidy=0==stats.artists && 0==stats.albums && 0==stats.songs &&
-               0==stats.uptime && 0==stats.playtime && 0==stats.dbPlaytime && 0==dbUpdate.toTime_t();
+               0==stats.uptime && 0==stats.playtime && 0==stats.dbPlaytime && 0==dbUpdate;
         emit statsUpdated(stats);
     }
 }
@@ -1423,6 +1435,7 @@ void MPDConnection::parseIdleReturn(const QByteArray &data)
                 getStatus();
             } else if (constIdleStoredPlaylistValue==value) {
                 listPlaylists();
+                listStreams();
             } else if (constIdlePlaylistValue==value) {
                 if (!playListUpdated) {
                     playListChanges();
@@ -1488,27 +1501,12 @@ void MPDConnection::update()
  */
 void MPDConnection::loadLibrary()
 {
-    emit updatingLibrary();
-    Response response=alwaysUseLsInfo || !details.topLevel.isEmpty() ? Response(false) : sendCommand("listallinfo", false);
-    MusicLibraryItemRoot *root=0;
-    if (response.ok) {
-        root = new MusicLibraryItemRoot;
-        MPDParseUtils::parseLibraryItems(response.data, details.dir, ver, mopidy, root);
-    } else { // MPD >=0.18 can fail listallinfo for large DBs, so get info dir by dir...
-        root = new MusicLibraryItemRoot;
-        if (!listDirInfo(details.topLevel.isEmpty() ? "/" : details.topLevel, root)) {
-            delete root;
-            root=0;
-        }
-    }
-
-    if (root) {
-        root->applyGrouping();
-        emit musicLibraryUpdated(root, dbUpdate);
-    }
+    emit updatingLibrary(dbUpdate);
+    listDirInfo(details.topLevel.isEmpty() ? "/" : details.topLevel);
     emit updatedLibrary();
 }
 
+#ifndef CANTATA_WEB
 void MPDConnection::loadFolders()
 {
     emit updatingFileList();
@@ -1518,6 +1516,7 @@ void MPDConnection::loadFolders()
     }
     emit updatedFileList();
 }
+#endif
 
 /*
  * Playlists commands
@@ -1533,7 +1532,9 @@ void MPDConnection::listPlaylists()
 {
     Response response=sendCommand("listplaylists");
     if (response.ok) {
-        emit playlistsRetrieved(MPDParseUtils::parsePlaylists(response.data));
+        QList<Playlist> playlists=MPDParseUtils::parsePlaylists(response.data);
+        playlists.removeAll((Playlist(constStreamsPlayListName)));
+        emit playlistsRetrieved(playlists);
     }
 }
 
@@ -1708,21 +1709,20 @@ void MPDConnection::search(const QString &field, const QString &value, int id)
 
 void MPDConnection::listStreams()
 {
-    Response response=sendCommand("listplaylistinfo "+encodeName(StreamsModel::constPlayListName));
+    Response response=sendCommand("listplaylistinfo "+encodeName(constStreamsPlayListName));
+    QList<Stream> streams;
     if (response.ok) {
         QList<Song> songs=MPDParseUtils::parseSongs(response.data, MPDParseUtils::Loc_Streams);
-        QList<Stream> streams;
         foreach (const Song &song, songs) {
             streams.append(Stream(song.file, song.name()));
-        }
-
-        emit streamList(streams);
+        }    
     }
+    emit streamList(streams);
 }
 
 void MPDConnection::saveStream(const QString &url, const QString &name)
 {
-    if (sendCommand("playlistadd "+encodeName(StreamsModel::constPlayListName)+" "+encodeName(MPDParseUtils::addStreamName(url, name))).ok) {
+    if (sendCommand("playlistadd "+encodeName(constStreamsPlayListName)+" "+encodeName(MPDParseUtils::addStreamName(url, name))).ok) {
         emit savedStream(url, name);
     }
 }
@@ -1733,7 +1733,7 @@ void MPDConnection::removeStreams(const QList<quint32> &positions)
         return;
     }
 
-    QByteArray encodedName=encodeName(StreamsModel::constPlayListName);
+    QByteArray encodedName=encodeName(constStreamsPlayListName);
     QList<quint32> sorted=positions;
     QList<quint32> removed;
 
@@ -1752,14 +1752,12 @@ void MPDConnection::removeStreams(const QList<quint32> &positions)
         }
     }
 
-    if (removed.count()) {
-        emit removedStreams(removed);
-    }
+    emit removedStreams(removed);
 }
 
 void MPDConnection::editStream(const QString &url, const QString &name, quint32 position)
 {
-    QByteArray encodedName=encodeName(StreamsModel::constPlayListName);
+    QByteArray encodedName=encodeName(constStreamsPlayListName);
     if (sendCommand("playlistdelete "+encodedName+" "+quote(position)).ok &&
         sendCommand("playlistadd "+encodedName+" "+encodeName(MPDParseUtils::addStreamName(url, name))).ok) {
 //        emit editedStream(url, name, position);
@@ -1871,15 +1869,17 @@ void MPDConnection::toggleStopAfterCurrent(bool afterCurrent)
     }
 }
 
-bool MPDConnection::listDirInfo(const QString &dir, MusicLibraryItemRoot *root)
+bool MPDConnection::listDirInfo(const QString &dir)
 {
     bool topLevel="/"==dir;
     Response response=sendCommand(topLevel ? "lsinfo" : ("lsinfo "+encodeName(dir)));
     if (response.ok) {
         QSet<QString> childDirs;
-        MPDParseUtils::parseLibraryItems(response.data, details.dir, ver, mopidy, root, !topLevel, &childDirs);
+        QList<Song> *songs=new QList<Song>();
+        MPDParseUtils::parseLibraryItems(response.data, details.dir, ver, *songs, dir, &childDirs);
+        emit librarySongs(songs);
         foreach (const QString &child, childDirs) {
-            if (!listDirInfo(child, root)) {
+            if (!listDirInfo(child)) {
                 return false;
             }
         }

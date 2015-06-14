@@ -30,14 +30,14 @@
 #include <QString>
 #include <QSet>
 #include "config.h"
-
-struct Song;
+#include "song.h"
+#ifndef CANTATA_WEB
+class DirViewItemRoot;
+#endif
 struct Playlist;
 struct Output;
 struct MPDStatsValues;
 struct MPDStatusValues;
-class DirViewItemRoot;
-class MusicLibraryItemRoot;
 
 namespace MPDParseUtils
 {
@@ -60,6 +60,7 @@ namespace MPDParseUtils
         Loc_Search
     };
 
+    extern void setSingleTracksFolder(const QString &f);
     extern QList<Playlist> parsePlaylists(const QByteArray &data);
     extern MPDStatsValues parseStats(const QByteArray &data);
     extern MPDStatusValues parseStatus(const QByteArray &data);
@@ -72,12 +73,10 @@ namespace MPDParseUtils
     typedef QMap<QByteArray, QStringList> MessageMap;
     extern MessageMap parseMessages(const QByteArray &data);
     #endif
-    extern bool groupSingle();
-    extern void setGroupSingle(bool g);
-    extern void parseLibraryItems(const QByteArray &data, const QString &mpdDir, long mpdVersion,
-                                  bool isMopidy, MusicLibraryItemRoot *rootItem, bool parsePlaylists=true,
-                                  QSet<QString> *childDirs=0);
+    extern void parseLibraryItems(const QByteArray &data, const QString &mpdDir, long mpdVersion, QList<Song> &songs, const QString &dir=QString(), QSet<QString> *childDirs=0);
+    #ifndef CANTATA_WEB
     extern DirViewItemRoot * parseDirViewItems(const QByteArray &data, bool isMopidy);
+    #endif
     extern QList<Output> parseOuputs(const QByteArray &data);
     extern QByteArray parseSticker(const QByteArray &data, const QByteArray &sticker);
     extern QString addStreamName(const QString &url, const QString &name);

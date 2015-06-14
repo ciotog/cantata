@@ -24,11 +24,11 @@
 #include "albumdetailsdialog.h"
 #include "support/localize.h"
 #include "audiocddevice.h"
-#include "models/musiclibrarymodel.h"
 #include "models/musiclibraryitemsong.h"
 #include "support/messagebox.h"
 #include "support/inputdialog.h"
 #include "models/devicesmodel.h"
+#include "models/mpdlibrarymodel.h"
 #include "cdalbum.h"
 #include "widgets/icons.h"
 #include "gui/coverdialog.h"
@@ -113,7 +113,7 @@ AlbumDetailsDialog::AlbumDetailsDialog(QWidget *parent)
     QSet<QString> composers;
     QSet<QString> albums;
     QSet<QString> genres;
-    MusicLibraryModel::self()->getDetails(artists, albumArtists, composers, albums, genres);
+    MpdLibraryModel::self()->getDetails(artists, albumArtists, composers, albums, genres);
 
     QStringList strings=albumArtists.toList();
     strings.sort();

@@ -134,7 +134,7 @@ struct Song
     void guessTags();
     void revertGuessedTags();
     void fillEmptyFields();
-    void setKey(int location);
+    quint16 setKey(int location);
     virtual void clear();
     void addGenre(const QString &g);
     QStringList genres() const;
@@ -203,6 +203,7 @@ struct Song
     QString filePath() const { return decodePath(file); }
     QString displayAlbum() const { return displayAlbum(album, year); }
     QString describe(bool withMarkup=false) const;
+    bool useComposer() const;
 //    QString basicDescription() const;
 
     //

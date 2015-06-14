@@ -41,7 +41,6 @@ public:
     void setStartClosed(bool sc);
     bool isStartClosed();
     void updateRows();
-    void refresh();
     void clear();
     //QStringList selectedFiles() const;
     void addSelectionToPlaylist(const QString &name=QString(), bool replace=false, quint8 priorty=0);
@@ -79,7 +78,6 @@ private Q_SLOTS:
     void itemDoubleClicked(const QModelIndex &index);
     void searchItems();
     void updated(const QModelIndex &index);
-    void updateGenres(const QModelIndex &);
 
 private:
     Action *renamePlaylistAction;

@@ -23,12 +23,12 @@
 
 #include "folderpage.h"
 #include "mpd-interface/mpdconnection.h"
-#include "models/musiclibrarymodel.h"
 #include "settings.h"
 #include "support/localize.h"
 #include "support/messagebox.h"
 #include "support/action.h"
 #include "support/utils.h"
+#include "models/mpdlibrarymodel.h"
 #include "stdactions.h"
 #include <QDesktopServices>
 #include <QUrl>
@@ -90,30 +90,12 @@ void FolderPage::setEnabled(bool e)
     }
 
     DirViewModel::self()->setEnabled(e);
-    if (e) {
-        refresh();
+    if (isVisible()) {
+        emit loadFolders();
+        loaded=true;
     } else {
         loaded=false;
     }
-}
-
-void FolderPage::refresh()
-{
-    view->goToTop();
-    if (DirViewModel::self()->isEnabled()) {
-        if (!isVisible()) {
-            loaded=false; // Refresh called for, but we are not currently visible...
-        } else if (!DirViewModel::self()->fromXML()) {
-            emit loadFolders();
-            loaded=true;
-        }
-    }
-}
-
-void FolderPage::clear()
-{
-    DirViewModel::self()->clear();
-    loaded=false;
 }
 
 void FolderPage::showEvent(QShowEvent *e)
@@ -121,9 +103,7 @@ void FolderPage::showEvent(QShowEvent *e)
     view->focusView();
     QWidget::showEvent(e);
     if (!loaded) {
-        if (!DirViewModel::self()->fromXML()) {
-            emit loadFolders();
-        }
+        emit loadFolders();
         loaded=true;
     }
 }
@@ -193,7 +173,7 @@ void FolderPage::openFileManager()
 
 QList<Song> FolderPage::selectedSongs(EmptySongMod esMod, bool allowPlaylists) const
 {
-    QList<Song> songs=MusicLibraryModel::self()->songs(selectedFiles(allowPlaylists), ES_None!=esMod);
+    QList<Song> songs=MpdLibraryModel::self()->songs(selectedFiles(allowPlaylists), ES_None!=esMod);
 
     if (ES_None!=esMod) {
         QList<Song>::Iterator it(songs.begin());

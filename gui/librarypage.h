@@ -25,7 +25,6 @@
 #define LIBRARYPAGE_H
 
 #include "ui_librarypage.h"
-#include "models/musiclibraryproxymodel.h"
 #include "page.h"
 
 class Action;
@@ -38,7 +37,6 @@ public:
     LibraryPage(QWidget *p);
     virtual ~LibraryPage();
 
-    void refresh();
     void clear();
     QStringList selectedFiles(bool allowPlaylists=false) const;
     QList<Song> selectedSongs(bool allowPlaylists=false) const;
@@ -55,7 +53,6 @@ public:
     void showAlbum(const QString &artist, const QString &album);
     void focusSearch() { view->focusSearch(); }
     void showEvent(QShowEvent *e);
-    void resort() { proxy.resort(); }
 
 private:
     void setItemSize(int v);
@@ -73,10 +70,6 @@ public Q_SLOTS:
     void itemDoubleClicked(const QModelIndex &);
     void searchItems();
     void controlActions();
-    void updateGenres(const QModelIndex &);
-
-private:
-    MusicLibraryProxyModel proxy;
 };
 
 #endif

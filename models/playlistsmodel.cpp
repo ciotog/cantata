@@ -44,7 +44,6 @@
 #include "mpd-interface/mpdstats.h"
 #include "mpd-interface/mpdconnection.h"
 #include "playqueuemodel.h"
-#include "streamsmodel.h"
 #include "widgets/icons.h"
 #ifdef ENABLE_HTTP_SERVER
 #include "http/httpserver.h"
@@ -675,10 +674,9 @@ QStringList PlaylistsModel::mimeTypes() const
 
 void PlaylistsModel::getPlaylists()
 {
-// ALWAYS need to send listPlaylists() -> as it is now used for favourite streams!
-//    if (enabled) {
+    if (enabled) {
         emit listPlaylists();
-//    }
+    }
 }
 
 void PlaylistsModel::clear()
@@ -725,9 +723,7 @@ void PlaylistsModel::setPlaylists(const QList<Playlist> &playlists)
         }
         beginResetModel();
         foreach (const Playlist &p, playlists) {
-            if (p.name!=StreamsModel::constPlayListName) {
-                items.append(new PlaylistItem(p, allocateKey()));
-            }
+            items.append(new PlaylistItem(p, allocateKey()));
         }
         endResetModel();
         updateItemMenu();
@@ -751,9 +747,6 @@ void PlaylistsModel::setPlaylists(const QList<Playlist> &playlists)
         }
 
         foreach (const Playlist &p, playlists) {
-            if (p.name==StreamsModel::constPlayListName) {
-                continue;
-            }
             retreived.insert(p.name);
             PlaylistItem *pl=getPlaylist(p.name);
 
@@ -852,13 +845,11 @@ void PlaylistsModel::playlistInfoRetrieved(const QString &name, const QList<Song
                 endRemoveRows();
             }
         }
-        pl->updateGenres();
         emit updated(idx);
         emit dataChanged(idx, idx);
     } else {
         emit listPlaylists();
     }
-    updateGenreList();
 }
 
 void PlaylistsModel::removedFromPlaylist(const QString &name, const QList<quint32> &positions)
@@ -893,10 +884,8 @@ void PlaylistsModel::removedFromPlaylist(const QString &name, const QList<quint3
         adjust+=(rowEnd-rowBegin)+1;
         endRemoveRows();
         it++;
-        pl->updateGenres();
     }
     emit updated(parent);
-    updateGenreList();
 }
 
 void PlaylistsModel::movedInPlaylist(const QString &name, const QList<quint32> &idx, quint32 pos)
@@ -1028,20 +1017,6 @@ void PlaylistsModel::clearPlaylists()
 
     qDeleteAll(items);
     items.clear();
-    updateGenreList();
-}
-
-void PlaylistsModel::updateGenreList()
-{
-    QSet<QString> newGenres;
-    foreach (PlaylistItem *p, items) {
-        newGenres+=p->genres;
-    }
-
-    if (newGenres!=plGenres) {
-        plGenres=newGenres;
-        emit updateGenres(plGenres);
-    }
 }
 
 quint32 PlaylistsModel::allocateKey()
@@ -1054,18 +1029,6 @@ quint32 PlaylistsModel::allocateKey()
     }
 
     return 0xFFFFFFFF;
-}
-
-PlaylistsModel::SongItem::SongItem(const Song &s, PlaylistItem *p)
-    : Song(s)
-    , parent(p)
-    , genreSet(0)
-{
-    QStringList g=genres();
-    if (g.count()>1) {
-        genreSet=new QSet<QString>();
-        *genreSet=g.toSet();
-    }
 }
 
 PlaylistsModel::PlaylistItem::PlaylistItem(const Playlist &pl, quint32 k)
@@ -1085,21 +1048,10 @@ PlaylistsModel::PlaylistItem::~PlaylistItem()
     clearSongs();
 }
 
-void PlaylistsModel::PlaylistItem::updateGenres()
-{
-    genres.clear();
-    foreach (const SongItem *s, songs) {
-        if (!s->genre.isEmpty()) {
-            genres+=s->allGenres();
-        }
-    }
-}
-
 void PlaylistsModel::PlaylistItem::clearSongs()
 {
     qDeleteAll(songs);
     songs.clear();
-    updateGenres();
 }
 
 PlaylistsModel::SongItem * PlaylistsModel::PlaylistItem::getSong(const Song &song, int offset)

@@ -27,7 +27,6 @@
 #include <cmath>
 #include "config.h"
 #include "song.h"
-#include "models/musiclibraryitemalbum.h"
 #include "support/localize.h"
 #if !defined CANTATA_NO_UI_FUNCTIONS && defined ENABLE_ONLINE_SERVICES
 #include "online/onlineservice.h"
@@ -367,11 +366,11 @@ QString Song::combineGenres(const QSet<QString> &genres)
     return g;
 }
 
-void Song::setKey(int location)
+quint16 Song::setKey(int location)
 {
     if (isStandardStream()) {
         key=0;
-        return;
+        return 0;
     }
 
     KeyStore &store=storeMap[location];
@@ -384,6 +383,7 @@ void Song::setKey(int location)
         store.keys.insert(songKey, store.currentKey);
         key=store.currentKey;
     }
+    return key;
 }
 
 bool Song::isUnknown() const
@@ -689,6 +689,16 @@ QString Song::describe(bool withMarkup) const
         descr=descr.replace("</b>", "");
     }
     return descr;
+}
+
+bool Song::useComposer() const
+{
+    foreach (const QString &g, genres()) {
+        if (isComposerGenre(g)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 //QString Song::basicDescription() const
